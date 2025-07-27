@@ -58,8 +58,8 @@
         }
         
         /* Estilos para Modo Administrador */
-        .admin-active .delete-row-btn { display: inline-block; }
-        .delete-row-btn { display: none; }
+        .admin-active .delete-row-btn, .admin-active .delete-col-btn { display: inline-block; }
+        .delete-row-btn, .delete-col-btn { display: none; }
         [contenteditable="true"] {
             cursor: cell;
             outline: none;
@@ -297,7 +297,12 @@
         };
         
         const renderTable = (data) => {
-            if (originalData.length === 0) return;
+            if (originalData.length === 0) {
+                 placeholder.classList.remove('hidden');
+                 tableContainer.innerHTML = '';
+                 tableContainer.appendChild(placeholder);
+                 return;
+            }
 
             const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
             const visibleHeaders = headers.filter(h => columnVisibility[h]);
@@ -323,6 +328,9 @@
                                 </button>
                                 <button class="p-1 rounded hover:bg-gray-600 hide-col-btn" title="Ocultar coluna" data-header="${header}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                </button>
+                                <button class="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-red-500 delete-col-btn" title="Deletar coluna" data-header="${header}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                 </button>
                             </div>
                         </div>
@@ -424,6 +432,24 @@
             applyFiltersAndRender();
         };
         
+        const handleDeleteColumn = (headerToDelete) => {
+            // Remove a propriedade de cada objeto nos dados
+            originalData.forEach(row => {
+                delete row[headerToDelete];
+            });
+
+            // Remove a coluna dos objetos de estado
+            delete columnVisibility[headerToDelete];
+            delete columnCheckboxFilters[headerToDelete];
+            delete columnWidths[headerToDelete];
+
+            updateLog('edit');
+            saveAllState();
+            showNotification(`Coluna "${headerToDelete}" deletada.`, 'success');
+            renderColumnToggles(); // Atualiza o menu lateral
+            applyFiltersAndRender();
+        };
+        
         const showConfirmation = (message, onConfirm) => {
             document.getElementById('modal-message').textContent = message;
             confirmationModal.classList.remove('hidden');
@@ -455,6 +481,13 @@
                     button.addEventListener('click', (e) => {
                         const rowId = e.currentTarget.closest('tr').dataset.rowId;
                         showConfirmation('Tem certeza que deseja deletar esta linha?', () => handleDeleteRow(rowId));
+                    });
+                });
+                
+                document.querySelectorAll('.delete-col-btn').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const header = e.currentTarget.dataset.header;
+                        showConfirmation(`Tem certeza que deseja deletar a coluna "${header}"? Esta ação não pode ser desfeita.`, () => handleDeleteColumn(header));
                     });
                 });
 
@@ -596,11 +629,11 @@
 
         const initResize = (e) => {
             e.preventDefault();
+            document.body.style.userSelect = 'none'; // Impede a seleção de texto durante o arraste
             thElm = e.target.parentElement;
             startOffset = thElm.offsetWidth - e.pageX;
-            document.body.style.cursor = 'col-resize';
             document.addEventListener('mousemove', doDrag);
-            document.addEventListener('mouseup', stopDrag);
+            document.addEventListener('mouseup', stopDrag, { once: true }); // Garante que será removido após o primeiro uso
         };
 
         const doDrag = (e) => {
@@ -614,13 +647,12 @@
         };
 
         const stopDrag = () => {
+            document.body.style.userSelect = ''; // Reabilita a seleção de texto
             if(thElm) {
                 saveState('widths', columnWidths);
             }
             thElm = null;
-            document.body.style.cursor = 'default';
             document.removeEventListener('mousemove', doDrag);
-            document.removeEventListener('mouseup', stopDrag);
         };
         
         const showNotification = (message, type = 'info') => {
@@ -643,6 +675,7 @@
         
         const renderColumnToggles = () => {
             columnTogglesContainer.innerHTML = '';
+            if(!originalData || originalData.length === 0) return;
             const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
             headers.forEach(header => {
                 const id = `toggle-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
