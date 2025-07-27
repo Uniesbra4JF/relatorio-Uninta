@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Dados Avançado!</title>
+    <title>Visualizador de Dados Avançado</title>
     
     <!-- Tailwind CSS para estilização rápida e responsiva -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -84,7 +84,7 @@
             <div class="flex items-center gap-4">
                  <h1 class="text-xl font-bold text-white flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
-                    Visualizador de Dados!!
+                    Visualizador de Dados
                 </h1>
                 <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -130,8 +130,10 @@
             </div>
             <div id="log-section" class="p-4 border-t border-gray-700 flex-shrink-0">
                 <h3 class="text-sm font-semibold text-white mb-2">Registros</h3>
-                <p id="last-import-log" class="text-xs text-gray-400">Última importação: N/A</p>
-                <p id="last-edit-log" class="text-xs text-gray-400">Última alteração: N/A</p>
+                <div class="text-xs text-gray-400 space-y-1">
+                    <p id="last-import-log">Última importação: N/A</p>
+                    <p id="last-edit-log">Última alteração: N/A</p>
+                </div>
             </div>
         </div>
 
@@ -254,7 +256,7 @@
             columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
             columnWidths = {};
             
-            updateLog('import');
+            updateLog('import', false, fileName);
             updateLog('edit', true); // Reseta o log de edição
             saveAllState();
 
@@ -276,7 +278,7 @@
             });
             saveState('filters', serializableFilters);
             saveState('adminMode', isAdminModeActive);
-            saveState('importLog', lastImportLog.textContent);
+            saveState('importLog', lastImportLog.innerHTML);
             saveState('editLog', lastEditLog.textContent);
         };
 
@@ -361,7 +363,6 @@
             tableHTML += `</tbody></table>`;
             
             tableContainer.innerHTML = tableHTML;
-            // Atraso para garantir que a tabela esteja no DOM para cálculo
             setTimeout(autoSizeColumns, 0); 
             attachTableEventListeners();
         };
@@ -434,12 +435,10 @@
         };
         
         const handleDeleteColumn = (headerToDelete) => {
-            // Remove a propriedade de cada objeto nos dados
             originalData.forEach(row => {
                 delete row[headerToDelete];
             });
 
-            // Remove a coluna dos objetos de estado
             delete columnVisibility[headerToDelete];
             delete columnCheckboxFilters[headerToDelete];
             delete columnWidths[headerToDelete];
@@ -447,7 +446,7 @@
             updateLog('edit');
             saveAllState();
             showNotification(`Coluna "${headerToDelete}" deletada.`, 'success');
-            renderColumnToggles(); // Atualiza o menu lateral
+            renderColumnToggles();
             applyFiltersAndRender();
         };
         
@@ -524,12 +523,12 @@
 
         // --- FUNÇÕES UTILITÁRIAS E OUTRAS LÓGICAS ---
 
-        const updateLog = (type, reset = false) => {
+        const updateLog = (type, reset = false, details = '') => {
             const now = new Date();
             const timestamp = now.toLocaleString('pt-BR');
             if (type === 'import') {
-                const logText = `Última importação: ${timestamp}`;
-                lastImportLog.textContent = logText;
+                const logText = `Última importação: <span class="font-medium text-gray-300">${details}</span> (${timestamp})`;
+                lastImportLog.innerHTML = logText;
                 saveState('importLog', logText);
             } else if (type === 'edit') {
                 const logText = reset ? 'Última alteração: N/A' : `Última alteração: ${timestamp}`;
@@ -644,13 +643,12 @@
             headers.forEach(th => totalWidth += th.getBoundingClientRect().width);
 
             if (totalWidth < containerWidth) {
-                const extraWidth = (containerWidth - totalWidth) / (headers.length - (isAdminModeActive ? 1 : 0));
-                headers.forEach(th => {
+                const resizableHeaders = headers.filter(h => h.querySelector('.resize-handle'));
+                const extraWidth = (containerWidth - totalWidth) / (resizableHeaders.length || 1);
+                resizableHeaders.forEach(th => {
                     const handle = th.querySelector('.resize-handle');
-                    if(handle) {
-                        const currentWidth = th.getBoundingClientRect().width;
-                        columnWidths[handle.dataset.header] = currentWidth + extraWidth;
-                    }
+                    const currentWidth = th.getBoundingClientRect().width;
+                    columnWidths[handle.dataset.header] = currentWidth + extraWidth;
                 });
             } else {
                  headers.forEach(th => {
@@ -828,7 +826,7 @@
                     adminModeToggle.classList.toggle('bg-gray-700', isAdminModeActive);
                 }
 
-                lastImportLog.textContent = loadState('importLog') || 'Última importação: N/A';
+                lastImportLog.innerHTML = loadState('importLog') || 'Última importação: N/A';
                 lastEditLog.textContent = loadState('editLog') || 'Última alteração: N/A';
                 
                 placeholder.classList.add('hidden');
