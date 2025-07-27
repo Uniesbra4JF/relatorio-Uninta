@@ -84,7 +84,7 @@
             <div class="flex items-center gap-4">
                  <h1 class="text-xl font-bold text-white flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
-                    Visualizador de Dados
+                    Visualizador de Dados!
                 </h1>
                 <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -125,6 +125,13 @@
                     <div id="column-toggle-section" class="border-t border-gray-700 pt-4 hidden">
                         <label class="block text-sm font-medium text-gray-300 mb-2">Ocultar/Exibir Colunas</label>
                         <div id="column-toggles" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+                    </div>
+                    <div class="border-t border-gray-700 pt-4">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Manutenção</label>
+                        <button id="clear-cache-button" class="w-full bg-gray-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                            LimpaCache123
+                        </button>
                     </div>
                 </div>
             </div>
@@ -212,6 +219,7 @@
         const modalConfirmBtn = document.getElementById('modal-confirm');
         const lastImportLog = document.getElementById('last-import-log');
         const lastEditLog = document.getElementById('last-edit-log');
+        const clearCacheButton = document.getElementById('clear-cache-button');
 
         // --- DADOS INICIAIS (para demonstração) ---
         const initialJsonData = [
@@ -799,6 +807,26 @@
             XLSX.writeFile(workbook, 'dados_exportados.xlsx');
         };
 
+        const handleClearCache = () => {
+            const password = prompt("Digite a senha para limpar o cache:");
+            if (password === "123") {
+                let keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key.startsWith(APP_PREFIX)) {
+                        keysToRemove.push(key);
+                    }
+                }
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                showNotification('Cache limpo com sucesso! A página será recarregada.', 'success');
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else if (password !== null) { 
+                showNotification('Senha incorreta.', 'error');
+            }
+        };
+
         // --- INICIALIZAÇÃO DA APLICAÇÃO ---
         const initializeApp = () => {
             const savedData = loadState('data');
@@ -848,6 +876,7 @@
         fileInput.addEventListener('change', handleFileSelect);
         exportXlsxButton.addEventListener('click', exportToXlsx);
         adminModeToggle.addEventListener('click', toggleAdminMode);
+        clearCacheButton.addEventListener('click', handleClearCache);
         
         modalCancelBtn.addEventListener('click', hideConfirmation);
         modalConfirmBtn.addEventListener('click', () => {
