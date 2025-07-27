@@ -179,7 +179,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         // --- VARIÁVEIS GLOBAIS ---
         let originalData = [];
-        let dataMap = new Map(); // Para acesso rápido aos dados da linha
+        let dataMap = new Map();
         let columnCheckboxFilters = {};
         let columnVisibility = {};
         let columnWidths = {};
@@ -218,6 +218,26 @@
             {"NOMES":"DUARTE LIMA DE SAMPAIO","Periodo":"semestre +2","NÍVEL":"Lic.","Declaração":"ok","contrato":"ASSinou","No GP":"Não","RA":4444000156,"PÓLO":"CENTRAL","Curso":"HISTÓRIA - Lic","Status":"não iniciou"}
         ];
 
+        // --- PERSISTÊNCIA (localStorage) ---
+        const APP_PREFIX = 'visualizer_';
+        const saveState = (key, value) => {
+            try {
+                localStorage.setItem(APP_PREFIX + key, JSON.stringify(value));
+            } catch (e) {
+                console.error("Falha ao salvar o estado:", e);
+            }
+        };
+
+        const loadState = (key) => {
+            try {
+                const serializedState = localStorage.getItem(APP_PREFIX + key);
+                return serializedState ? JSON.parse(serializedState) : undefined;
+            } catch (e) {
+                console.error("Falha ao carregar o estado:", e);
+                return undefined;
+            }
+        };
+
         // --- FUNÇÕES PRINCIPAIS ---
 
         const loadData = (data, fileName) => {
@@ -225,7 +245,7 @@
                 showNotification('O arquivo não contém dados válidos ou está vazio.', 'error');
                 return;
             }
-            originalData = data.map((row, index) => ({ ...row, __internal_id: index }));
+            originalData = data.map((row, index) => ({ ...row, __internal_id: row.__internal_id ?? index }));
             dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
 
             const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
@@ -236,6 +256,7 @@
             
             updateLog('import');
             updateLog('edit', true); // Reseta o log de edição
+            saveAllState();
 
             renderColumnToggles();
             applyFiltersAndRender();
@@ -244,12 +265,26 @@
             tableContainer.innerHTML = ''; 
             showNotification(`Arquivo "${fileName}" carregado com sucesso!`, 'success');
         };
+        
+        const saveAllState = () => {
+            saveState('data', originalData);
+            saveState('visibility', columnVisibility);
+            saveState('widths', columnWidths);
+            const serializableFilters = {};
+            Object.entries(columnCheckboxFilters).forEach(([key, value]) => {
+                serializableFilters[key] = [...value];
+            });
+            saveState('filters', serializableFilters);
+            saveState('adminMode', isAdminModeActive);
+            saveState('importLog', lastImportLog.textContent);
+            saveState('editLog', lastEditLog.textContent);
+        };
 
         const applyFiltersAndRender = () => {
             let filteredData = [...originalData];
 
             Object.entries(columnCheckboxFilters).forEach(([header, selectedValues]) => {
-                if (selectedValues.size > 0 && selectedValues.size < new Set(originalData.map(row => (row[header] ?? '').toString())).size) {
+                if (selectedValues && selectedValues.size > 0 && selectedValues.size < new Set(originalData.map(row => (row[header] ?? '').toString())).size) {
                      filteredData = filteredData.filter(row => {
                         const cellValue = (row[header] ?? '').toString();
                         return selectedValues.has(cellValue);
@@ -328,8 +363,9 @@
             app.classList.toggle('admin-active', isAdminModeActive);
             adminModeToggle.classList.toggle('text-yellow-400', isAdminModeActive);
             adminModeToggle.classList.toggle('bg-gray-700', isAdminModeActive);
+            saveState('adminMode', isAdminModeActive);
             showNotification(`Modo Administrador ${isAdminModeActive ? 'ativado' : 'desativado'}.`, 'info');
-            applyFiltersAndRender(); // Re-renderiza a tabela para adicionar/remover elementos ADM
+            applyFiltersAndRender();
         };
 
         const handleCellEdit = (target, rowId, header) => {
@@ -338,6 +374,7 @@
             if (rowData && rowData[header] !== newValue) {
                 rowData[header] = newValue;
                 updateLog('edit');
+                saveState('data', originalData);
                 showNotification('Célula atualizada.', 'success');
             }
         };
@@ -345,11 +382,11 @@
         const handleHeaderEdit = (target, oldHeader) => {
             const newHeader = target.textContent.trim();
             if (!newHeader || newHeader === oldHeader) {
-                target.textContent = oldHeader; // Reverte se vazio ou igual
+                target.textContent = oldHeader;
                 return;
             }
             if (Object.keys(originalData[0]).includes(newHeader)) {
-                target.textContent = oldHeader; // Reverte se o nome já existe
+                target.textContent = oldHeader;
                 showNotification('Nome de coluna já existe.', 'error');
                 return;
             }
@@ -361,7 +398,7 @@
                 }
             });
             const updateStateKey = (stateObj) => {
-                 if (Object.prototype.hasOwnProperty.call(stateObj, oldHeader)) {
+                 if (stateObj && Object.prototype.hasOwnProperty.call(stateObj, oldHeader)) {
                     stateObj[newHeader] = stateObj[oldHeader];
                     delete stateObj[oldHeader];
                 }
@@ -371,6 +408,7 @@
             updateStateKey(columnWidths);
             
             updateLog('edit');
+            saveAllState();
             showNotification(`Coluna "${oldHeader}" renomeada para "${newHeader}".`, 'success');
             applyFiltersAndRender();
         };
@@ -380,6 +418,7 @@
             originalData = originalData.filter(row => row.__internal_id !== id);
             dataMap.delete(id);
             updateLog('edit');
+            saveState('data', originalData);
             showNotification('Linha deletada com sucesso.', 'success');
             applyFiltersAndRender();
         };
@@ -420,7 +459,6 @@
 
                 document.querySelectorAll('[contenteditable="true"]').forEach(el => {
                     el.addEventListener('dblclick', (e) => {
-                        // Permite a seleção do texto ao dar duplo clique
                         const range = document.createRange();
                         const sel = window.getSelection();
                         range.selectNodeContents(e.target);
@@ -438,10 +476,10 @@
                     });
                     el.addEventListener('blur', (e) => {
                         const target = e.target;
-                        if(target.dataset.cellHeader) { // É uma célula de dados
+                        if(target.dataset.cellHeader) {
                             const rowId = target.closest('tr').dataset.rowId;
                             handleCellEdit(target, rowId, target.dataset.cellHeader);
-                        } else if (target.dataset.headerName) { // É um cabeçalho
+                        } else if (target.dataset.headerName) {
                             handleHeaderEdit(target, target.dataset.headerName);
                         }
                     });
@@ -455,14 +493,19 @@
             const now = new Date();
             const timestamp = now.toLocaleString('pt-BR');
             if (type === 'import') {
-                lastImportLog.textContent = `Última importação: ${timestamp}`;
+                const logText = `Última importação: ${timestamp}`;
+                lastImportLog.textContent = logText;
+                saveState('importLog', logText);
             } else if (type === 'edit') {
-                lastEditLog.textContent = reset ? 'Última alteração: N/A' : `Última alteração: ${timestamp}`;
+                const logText = reset ? 'Última alteração: N/A' : `Última alteração: ${timestamp}`;
+                lastEditLog.textContent = logText;
+                saveState('editLog', logText);
             }
         };
 
         const handleHideColumn = (header) => {
             columnVisibility[header] = false;
+            saveState('visibility', columnVisibility);
             updateColumnTogglesUI();
             applyFiltersAndRender();
         };
@@ -485,7 +528,7 @@
             const renderOptions = (search = '') => {
                 filterOptions.innerHTML = '';
                 const currentSelectedValues = columnCheckboxFilters[header];
-                const allSelected = currentSelectedValues.size === 0 || currentSelectedValues.size === uniqueValues.length;
+                const allSelected = !currentSelectedValues || currentSelectedValues.size === 0 || currentSelectedValues.size === uniqueValues.length;
 
                 filterOptions.innerHTML += `
                     <label class="flex items-center space-x-2 p-1 rounded hover:bg-gray-600 font-semibold">
@@ -518,6 +561,11 @@
                     document.querySelectorAll('.filter-option-cb:checked').forEach(cb => newSelected.add(cb.value));
                     columnCheckboxFilters[header] = newSelected;
                 }
+                const serializableFilters = {};
+                Object.entries(columnCheckboxFilters).forEach(([key, value]) => {
+                    serializableFilters[key] = [...value];
+                });
+                saveState('filters', serializableFilters);
                 closeDropdown();
                 applyFiltersAndRender();
             };
@@ -565,6 +613,9 @@
         };
 
         const stopDrag = () => {
+            if(thElm) {
+                saveState('widths', columnWidths);
+            }
             thElm = null;
             document.body.style.cursor = 'default';
             document.removeEventListener('mousemove', doDrag);
@@ -597,11 +648,12 @@
                 const toggleWrapper = document.createElement('div');
                 toggleWrapper.className = 'flex items-center';
                 toggleWrapper.innerHTML = `
-                    <input id="${id}" type="checkbox" ${columnVisibility[header] ? 'checked' : ''} class="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-blue-600 bg-gray-700">
+                    <input id="${id}" type="checkbox" ${columnVisibility[header] ?? true ? 'checked' : ''} class="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-blue-600 bg-gray-700">
                     <label for="${id}" class="ml-3 text-sm text-gray-300 truncate">${header}</label>
                 `;
                 toggleWrapper.querySelector('input').addEventListener('change', (e) => {
                     columnVisibility[header] = e.target.checked;
+                    saveState('visibility', columnVisibility);
                     applyFiltersAndRender();
                 });
                 columnTogglesContainer.appendChild(toggleWrapper);
@@ -662,7 +714,7 @@
             
             const dataToExport = originalData.map(row => {
                 const newRow = {...row};
-                delete newRow.__internal_id; // Remove a chave interna antes de exportar
+                delete newRow.__internal_id;
                 return newRow;
             });
 
@@ -670,6 +722,47 @@
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
             XLSX.writeFile(workbook, 'dados_exportados.xlsx');
+        };
+
+        // --- INICIALIZAÇÃO DA APLICAÇÃO ---
+        const initializeApp = () => {
+            const savedData = loadState('data');
+            
+            if (savedData && savedData.length > 0) {
+                originalData = savedData;
+                dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
+                
+                const savedVisibility = loadState('visibility');
+                const savedWidths = loadState('widths');
+                const savedFilters = loadState('filters');
+                const savedAdminMode = loadState('adminMode');
+                
+                if (savedVisibility) columnVisibility = savedVisibility;
+                if (savedWidths) columnWidths = savedWidths;
+                if (savedFilters) {
+                    Object.entries(savedFilters).forEach(([key, value]) => {
+                        columnCheckboxFilters[key] = new Set(value);
+                    });
+                }
+                if (savedAdminMode) {
+                    isAdminModeActive = savedAdminMode;
+                    app.classList.toggle('admin-active', isAdminModeActive);
+                    adminModeToggle.classList.toggle('text-yellow-400', isAdminModeActive);
+                    adminModeToggle.classList.toggle('bg-gray-700', isAdminModeActive);
+                }
+
+                lastImportLog.textContent = loadState('importLog') || 'Última importação: N/A';
+                lastEditLog.textContent = loadState('editLog') || 'Última alteração: N/A';
+                
+                placeholder.classList.add('hidden');
+                exportXlsxButton.disabled = false;
+                renderColumnToggles();
+                applyFiltersAndRender();
+                showNotification('Sessão anterior restaurada.', 'info');
+            } else {
+                loadData(initialJsonData, "Dados de Exemplo");
+                filePathDisplay.textContent = "Dados de exemplo carregados.";
+            }
         };
 
         // --- EVENT LISTENERS GERAIS ---
@@ -689,9 +782,7 @@
             hideConfirmation();
         });
 
-        // --- INICIALIZAÇÃO ---
-        loadData(initialJsonData, "Dados de Exemplo");
-        filePathDisplay.textContent = "Dados de exemplo carregados.";
+        initializeApp();
     });
     </script>
 </body>
