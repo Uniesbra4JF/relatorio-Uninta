@@ -36,10 +36,9 @@
             overflow: hidden;
         }
         
-        /* Tabela com layout fixo para permitir redimensionamento */
+        /* Tabela com layout inicial automático */
         .resizable-table {
-            table-layout: fixed;
-            border-collapse: collapse; /* Une as bordas das células */
+            border-collapse: collapse;
         }
 
         /* Handle para redimensionamento de coluna */
@@ -362,6 +361,8 @@
             tableHTML += `</tbody></table>`;
             
             tableContainer.innerHTML = tableHTML;
+            // Atraso para garantir que a tabela esteja no DOM para cálculo
+            setTimeout(autoSizeColumns, 0); 
             attachTableEventListeners();
         };
         
@@ -627,13 +628,60 @@
         let thElm;
         let startOffset;
 
+        const autoSizeColumns = () => {
+            const table = tableContainer.querySelector('table');
+            if (!table || Object.keys(columnWidths).length > 0) return; // Não auto-ajusta se já houver larguras salvas
+
+            const headers = Array.from(table.querySelectorAll('thead th'));
+            const containerWidth = tableContainer.clientWidth;
+            const minColWidth = 150; // Largura mínima
+            
+            let totalWidth = 0;
+            headers.forEach(th => {
+                const handle = th.querySelector('.resize-handle');
+                if(handle) {
+                    const width = Math.max(minColWidth, th.getBoundingClientRect().width);
+                    totalWidth += width;
+                } else {
+                    totalWidth += th.getBoundingClientRect().width; // Para a coluna de Ações
+                }
+            });
+
+            if (totalWidth < containerWidth) {
+                const extraWidth = (containerWidth - totalWidth) / (headers.length - (isAdminModeActive ? 1 : 0));
+                headers.forEach(th => {
+                    const handle = th.querySelector('.resize-handle');
+                    if(handle) {
+                        const currentWidth = Math.max(minColWidth, th.getBoundingClientRect().width);
+                        columnWidths[handle.dataset.header] = currentWidth + extraWidth;
+                    }
+                });
+                applyFiltersAndRender(); // Re-renderiza com as novas larguras
+            }
+        };
+
         const initResize = (e) => {
             e.preventDefault();
-            document.body.style.userSelect = 'none'; // Impede a seleção de texto durante o arraste
-            thElm = e.target.parentElement;
+            document.body.style.userSelect = 'none';
+            thElm = e.target.closest('th');
+            
+            const table = thElm.closest('table');
+            if(table.style.tableLayout !== 'fixed') {
+                const headers = Array.from(table.querySelectorAll('thead th'));
+                headers.forEach(th => {
+                    const handle = th.querySelector('.resize-handle');
+                    if(handle) {
+                        const width = th.getBoundingClientRect().width;
+                        columnWidths[handle.dataset.header] = width;
+                        th.style.width = `${width}px`;
+                    }
+                });
+                table.style.tableLayout = 'fixed';
+            }
+
             startOffset = thElm.offsetWidth - e.pageX;
             document.addEventListener('mousemove', doDrag);
-            document.addEventListener('mouseup', stopDrag, { once: true }); // Garante que será removido após o primeiro uso
+            document.addEventListener('mouseup', stopDrag, { once: true });
         };
 
         const doDrag = (e) => {
@@ -647,7 +695,7 @@
         };
 
         const stopDrag = () => {
-            document.body.style.userSelect = ''; // Reabilita a seleção de texto
+            document.body.style.userSelect = '';
             if(thElm) {
                 saveState('widths', columnWidths);
             }
