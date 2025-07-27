@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Dados Avançado</title>
+    
+    <!-- Tailwind CSS para estilização rápida e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS (xlsx) para manipulação de planilhas Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        /* Estilos customizados para complementar o Tailwind */
+        body {
+            background-color: #111827; /* bg-gray-900 */
+            color: #d1d5db; /* text-gray-300 */
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Evita scroll duplo */
+        }
+        
+        /* Estilização da barra de rolagem */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* Cabeçalho fixo da tabela */
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #1f2937; /* bg-gray-800 */
+            box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+        }
+        
+        /* Tabela com layout fixo para permitir redimensionamento */
+        .resizable-table {
+            table-layout: fixed;
+        }
+
+        /* Handle para redimensionamento de coluna */
+        .resize-handle {
+            position: absolute;
+            top: 0;
+            right: -2px;
+            bottom: 0;
+            width: 5px;
+            cursor: col-resize;
+            z-index: 11;
+        }
+
+        #menu-panel, #notification, #filter-dropdown {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        }
+        
+        /* Estilos para Modo Administrador */
+        .admin-active .delete-row-btn { display: inline-block; }
+        .delete-row-btn { display: none; }
+        [contenteditable="true"] {
+            cursor: cell;
+            outline: none;
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        [contenteditable="true"]:focus {
+            box-shadow: 0 0 0 2px #3b82f6; /* ring-blue-500 */
+            border-radius: 2px;
+        }
+    </style>
+    <!-- Importação da fonte Inter do Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="antialiased">
+
+    <!-- Container Principal -->
+    <div id="app" class="min-h-screen w-full">
+        
+        <!-- Cabeçalho da Aplicação -->
+        <header class="bg-gray-900/80 backdrop-blur-sm p-4 flex justify-between items-center border-b border-gray-700 fixed top-0 left-0 right-0 z-20">
+            <div class="flex items-center gap-4">
+                 <h1 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+                    Visualizador de Dados
+                </h1>
+                <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </button>
+            </div>
+            <button id="menu-button" class="p-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+            </button>
+        </header>
+
+        <!-- Menu Lateral (Hambúrguer) -->
+        <div id="menu-overlay" class="fixed inset-0 bg-black/60 z-30 hidden"></div>
+        <div id="menu-panel" class="fixed top-0 right-0 h-full w-80 bg-gray-800 shadow-lg z-40 transform translate-x-full border-l border-gray-700 flex flex-col">
+            <div class="p-4 flex-grow overflow-y-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-lg font-semibold text-white">Opções</h2>
+                    <button id="close-menu-button" class="p-2 rounded-md hover:bg-gray-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Carregar Arquivo Local</label>
+                        <button id="load-file-button" class="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Selecionar Arquivo
+                        </button>
+                        <input type="file" id="file-input" class="hidden" accept=".json, .xlsx, .csv">
+                        <p id="file-path-display" class="text-xs text-gray-500 mt-2 truncate">Nenhum arquivo selecionado.</p>
+                    </div>
+                    <div class="border-t border-gray-700 pt-4">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Exportar Dados</label>
+                        <button id="export-xlsx-button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
+                           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            Exportar para .xlsx
+                        </button>
+                    </div>
+                    <div id="column-toggle-section" class="border-t border-gray-700 pt-4 hidden">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Ocultar/Exibir Colunas</label>
+                        <div id="column-toggles" class="space-y-2 max-h-60 overflow-y-auto pr-2"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="log-section" class="p-4 border-t border-gray-700 flex-shrink-0">
+                <h3 class="text-sm font-semibold text-white mb-2">Registros</h3>
+                <p id="last-import-log" class="text-xs text-gray-400">Última importação: N/A</p>
+                <p id="last-edit-log" class="text-xs text-gray-400">Última alteração: N/A</p>
+            </div>
+        </div>
+
+        <!-- Conteúdo Principal (Tabela) -->
+        <main class="pt-16 px-4 sm:px-6 lg:px-8">
+            <div id="table-container" class="w-full overflow-auto" style="height: calc(100vh - 5rem);">
+                <div id="placeholder" class="flex flex-col items-center justify-center h-full text-gray-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-4"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3"/><polyline points="14 2 14 8 20 8"/><path d="M5 12h3"/><path d="M5 15h4"/><path d="m14 13.1 3.5 2.8 3.5-2.8"/><path d="M17.5 10v6"/></svg>
+                    <h2 class="text-xl font-medium">Nenhum dado carregado</h2>
+                    <p class="mt-1">Use o menu para carregar um arquivo .json ou .xlsx.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Sistema de Notificação -->
+    <div id="notification" class="fixed top-5 right-5 p-4 rounded-lg shadow-xl z-50 text-white opacity-0 transform translate-x-[120%]" role="alert">
+        <p id="notification-message"></p>
+    </div>
+
+    <!-- Dropdown de Filtro (estilo Excel) -->
+    <div id="filter-dropdown" class="fixed bg-gray-700 border border-gray-600 rounded-md shadow-lg z-50 w-64 p-3 hidden flex-col">
+        <input type="text" id="filter-search" class="filter-input mb-2" placeholder="Pesquisar valores...">
+        <div id="filter-options" class="flex-grow overflow-y-auto max-h-48 space-y-2 text-sm pr-2"></div>
+        <div class="flex justify-end gap-2 mt-3 pt-3 border-t border-gray-600">
+            <button id="filter-cancel" class="px-3 py-1 rounded-md bg-gray-600 hover:bg-gray-500 text-white text-sm">Cancelar</button>
+            <button id="filter-ok" class="px-3 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm">OK</button>
+        </div>
+    </div>
+    
+    <!-- Modal de Confirmação -->
+    <div id="confirmation-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+            <h3 class="text-lg font-bold text-white mb-4" id="modal-title">Confirmar Ação</h3>
+            <p class="text-gray-300 mb-6" id="modal-message">Você tem certeza?</p>
+            <div class="flex justify-end gap-4">
+                <button id="modal-cancel" class="px-4 py-2 rounded-md bg-gray-600 hover:bg-gray-500 text-white font-semibold">Cancelar</button>
+                <button id="modal-confirm" class="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- VARIÁVEIS GLOBAIS ---
+        let originalData = [];
+        let dataMap = new Map(); // Para acesso rápido aos dados da linha
+        let columnCheckboxFilters = {};
+        let columnVisibility = {};
+        let columnWidths = {};
+        let notificationTimeout;
+        let isAdminModeActive = false;
+        let modalConfirmCallback = null;
+
+        // --- ELEMENTOS DO DOM ---
+        const app = document.getElementById('app');
+        const menuButton = document.getElementById('menu-button');
+        const closeMenuButton = document.getElementById('close-menu-button');
+        const menuPanel = document.getElementById('menu-panel');
+        const menuOverlay = document.getElementById('menu-overlay');
+        const loadFileButton = document.getElementById('load-file-button');
+        const fileInput = document.getElementById('file-input');
+        const filePathDisplay = document.getElementById('file-path-display');
+        const exportXlsxButton = document.getElementById('export-xlsx-button');
+        const adminModeToggle = document.getElementById('admin-mode-toggle');
+        const tableContainer = document.getElementById('table-container');
+        const placeholder = document.getElementById('placeholder');
+        const columnToggleSection = document.getElementById('column-toggle-section');
+        const columnTogglesContainer = document.getElementById('column-toggles');
+        const notification = document.getElementById('notification');
+        const notificationMessage = document.getElementById('notification-message');
+        const filterDropdown = document.getElementById('filter-dropdown');
+        const confirmationModal = document.getElementById('confirmation-modal');
+        const modalCancelBtn = document.getElementById('modal-cancel');
+        const modalConfirmBtn = document.getElementById('modal-confirm');
+        const lastImportLog = document.getElementById('last-import-log');
+        const lastEditLog = document.getElementById('last-edit-log');
+
+        // --- DADOS INICIAIS (para demonstração) ---
+        const initialJsonData = [
+            {"NOMES":"RAFAELA MAC vasconcelos","Periodo":"Ultimo","NÍVEL":"Lic.","Declaração":"ok","contrato":"ASSinou","No GP":"Zap","RA":4444000155,"PÓLO":"BURITI","Curso":"LETRAS - Lic","Status":"iniciou"},
+            {"NOMES":"SAMPAIO DA COSTA SOARES","Periodo":"Penultimo","NÍVEL":"Lic.","Declaração":"Falta","contrato":"ASSinou","No GP":"Zap","RA":4444700155,"PÓLO":"BURITI","Curso":"Lic. em PEDAGOGIA","Status":"iniciou"},
+            {"NOMES":"DUARTE LIMA DE SAMPAIO","Periodo":"semestre +2","NÍVEL":"Lic.","Declaração":"ok","contrato":"ASSinou","No GP":"Não","RA":4444000156,"PÓLO":"CENTRAL","Curso":"HISTÓRIA - Lic","Status":"não iniciou"}
+        ];
+
+        // --- FUNÇÕES PRINCIPAIS ---
+
+        const loadData = (data, fileName) => {
+            if (!Array.isArray(data) || data.length === 0) {
+                showNotification('O arquivo não contém dados válidos ou está vazio.', 'error');
+                return;
+            }
+            originalData = data.map((row, index) => ({ ...row, __internal_id: index }));
+            dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
+
+            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
+            
+            columnCheckboxFilters = headers.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
+            columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
+            columnWidths = {};
+            
+            updateLog('import');
+            updateLog('edit', true); // Reseta o log de edição
+
+            renderColumnToggles();
+            applyFiltersAndRender();
+            exportXlsxButton.disabled = false;
+            placeholder.classList.add('hidden');
+            tableContainer.innerHTML = ''; 
+            showNotification(`Arquivo "${fileName}" carregado com sucesso!`, 'success');
+        };
+
+        const applyFiltersAndRender = () => {
+            let filteredData = [...originalData];
+
+            Object.entries(columnCheckboxFilters).forEach(([header, selectedValues]) => {
+                if (selectedValues.size > 0 && selectedValues.size < new Set(originalData.map(row => (row[header] ?? '').toString())).size) {
+                     filteredData = filteredData.filter(row => {
+                        const cellValue = (row[header] ?? '').toString();
+                        return selectedValues.has(cellValue);
+                    });
+                }
+            });
+            
+            renderTable(filteredData);
+        };
+        
+        const renderTable = (data) => {
+            if (originalData.length === 0) return;
+
+            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
+            const visibleHeaders = headers.filter(h => columnVisibility[h]);
+
+            let tableHTML = `<table class="min-w-full text-sm text-left text-gray-300 resizable-table">`;
+            // Cabeçalho
+            tableHTML += `<thead class="text-xs text-gray-300 uppercase bg-gray-800"><tr>`;
+            if(isAdminModeActive) {
+                tableHTML += `<th class="px-2 py-2" style="width: 50px;">Ações</th>`;
+            }
+            visibleHeaders.forEach(header => {
+                const widthStyle = columnWidths[header] ? `style="width: ${columnWidths[header]}px;"` : '';
+                const uniqueValuesInCol = new Set(originalData.map(row => (row[header] ?? '').toString()));
+                const filterActiveClass = columnCheckboxFilters[header]?.size > 0 && columnCheckboxFilters[header].size < uniqueValuesInCol.size ? 'text-blue-400' : '';
+                
+                tableHTML += `
+                    <th scope="col" class="px-3 py-2 relative" ${widthStyle}>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-semibold whitespace-nowrap truncate" title="${header}" data-header-name="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${header}</span>
+                            <div class="flex items-center flex-shrink-0">
+                                <button class="p-1 rounded hover:bg-gray-600 filter-btn ${filterActiveClass}" title="Filtrar coluna" data-header="${header}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                                </button>
+                                <button class="p-1 rounded hover:bg-gray-600 hide-col-btn" title="Ocultar coluna" data-header="${header}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="resize-handle" data-header="${header}"></div>
+                    </th>
+                `;
+            });
+            tableHTML += `</tr></thead>`;
+
+            // Corpo da Tabela
+            tableHTML += `<tbody>`;
+            if (data.length === 0) {
+                let colSpan = visibleHeaders.length;
+                if(isAdminModeActive) colSpan++;
+                tableHTML += `<tr><td colspan="${colSpan}" class="text-center py-8 text-gray-500">Nenhum resultado encontrado.</td></tr>`;
+            } else {
+                data.forEach(row => {
+                    tableHTML += `<tr data-row-id="${row.__internal_id}">`;
+                    if(isAdminModeActive) {
+                        tableHTML += `<td class="text-center px-2 py-2"><button class="p-1 text-gray-400 hover:text-red-500 delete-row-btn" title="Deletar linha"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>`;
+                    }
+                    visibleHeaders.forEach(header => {
+                        const value = row[header] ?? '';
+                        tableHTML += `<td class="px-3 py-2 whitespace-nowrap truncate" data-cell-header="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${value}</td>`;
+                    });
+                    tableHTML += `</tr>`;
+                });
+            }
+            tableHTML += `</tbody></table>`;
+            
+            tableContainer.innerHTML = tableHTML;
+            attachTableEventListeners();
+        };
+        
+        // --- MODO ADMINISTRADOR ---
+        
+        const toggleAdminMode = () => {
+            isAdminModeActive = !isAdminModeActive;
+            app.classList.toggle('admin-active', isAdminModeActive);
+            adminModeToggle.classList.toggle('text-yellow-400', isAdminModeActive);
+            adminModeToggle.classList.toggle('bg-gray-700', isAdminModeActive);
+            showNotification(`Modo Administrador ${isAdminModeActive ? 'ativado' : 'desativado'}.`, 'info');
+            applyFiltersAndRender(); // Re-renderiza a tabela para adicionar/remover elementos ADM
+        };
+
+        const handleCellEdit = (target, rowId, header) => {
+            const newValue = target.textContent;
+            const rowData = dataMap.get(parseInt(rowId));
+            if (rowData && rowData[header] !== newValue) {
+                rowData[header] = newValue;
+                updateLog('edit');
+                showNotification('Célula atualizada.', 'success');
+            }
+        };
+
+        const handleHeaderEdit = (target, oldHeader) => {
+            const newHeader = target.textContent.trim();
+            if (!newHeader || newHeader === oldHeader) {
+                target.textContent = oldHeader; // Reverte se vazio ou igual
+                return;
+            }
+            if (Object.keys(originalData[0]).includes(newHeader)) {
+                target.textContent = oldHeader; // Reverte se o nome já existe
+                showNotification('Nome de coluna já existe.', 'error');
+                return;
+            }
+
+            originalData.forEach(row => {
+                if(Object.prototype.hasOwnProperty.call(row, oldHeader)) {
+                    row[newHeader] = row[oldHeader];
+                    delete row[oldHeader];
+                }
+            });
+            const updateStateKey = (stateObj) => {
+                 if (Object.prototype.hasOwnProperty.call(stateObj, oldHeader)) {
+                    stateObj[newHeader] = stateObj[oldHeader];
+                    delete stateObj[oldHeader];
+                }
+            };
+            updateStateKey(columnCheckboxFilters);
+            updateStateKey(columnVisibility);
+            updateStateKey(columnWidths);
+            
+            updateLog('edit');
+            showNotification(`Coluna "${oldHeader}" renomeada para "${newHeader}".`, 'success');
+            applyFiltersAndRender();
+        };
+        
+        const handleDeleteRow = (rowId) => {
+            const id = parseInt(rowId);
+            originalData = originalData.filter(row => row.__internal_id !== id);
+            dataMap.delete(id);
+            updateLog('edit');
+            showNotification('Linha deletada com sucesso.', 'success');
+            applyFiltersAndRender();
+        };
+        
+        const showConfirmation = (message, onConfirm) => {
+            document.getElementById('modal-message').textContent = message;
+            confirmationModal.classList.remove('hidden');
+            confirmationModal.classList.add('flex');
+            modalConfirmCallback = onConfirm;
+        };
+
+        const hideConfirmation = () => {
+            confirmationModal.classList.add('hidden');
+            confirmationModal.classList.remove('flex');
+            modalConfirmCallback = null;
+        };
+
+        // --- EVENT LISTENERS DA TABELA ---
+
+        const attachTableEventListeners = () => {
+            document.querySelectorAll('.filter-btn').forEach(button => {
+                button.addEventListener('click', (e) => openFilterDropdown(e.currentTarget.dataset.header, e.currentTarget));
+            });
+            document.querySelectorAll('.hide-col-btn').forEach(button => {
+                button.addEventListener('click', (e) => handleHideColumn(e.currentTarget.dataset.header));
+            });
+            document.querySelectorAll('.resize-handle').forEach(handle => {
+                handle.addEventListener('mousedown', initResize);
+            });
+            
+            if (isAdminModeActive) {
+                document.querySelectorAll('.delete-row-btn').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const rowId = e.currentTarget.closest('tr').dataset.rowId;
+                        showConfirmation('Tem certeza que deseja deletar esta linha?', () => handleDeleteRow(rowId));
+                    });
+                });
+
+                document.querySelectorAll('[contenteditable="true"]').forEach(el => {
+                    el.addEventListener('dblclick', (e) => {
+                        // Permite a seleção do texto ao dar duplo clique
+                        const range = document.createRange();
+                        const sel = window.getSelection();
+                        range.selectNodeContents(e.target);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    });
+                    el.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            e.target.blur();
+                        } else if (e.key === 'Escape') {
+                            document.execCommand('undo');
+                            e.target.blur();
+                        }
+                    });
+                    el.addEventListener('blur', (e) => {
+                        const target = e.target;
+                        if(target.dataset.cellHeader) { // É uma célula de dados
+                            const rowId = target.closest('tr').dataset.rowId;
+                            handleCellEdit(target, rowId, target.dataset.cellHeader);
+                        } else if (target.dataset.headerName) { // É um cabeçalho
+                            handleHeaderEdit(target, target.dataset.headerName);
+                        }
+                    });
+                });
+            }
+        };
+
+        // --- FUNÇÕES UTILITÁRIAS E OUTRAS LÓGICAS ---
+
+        const updateLog = (type, reset = false) => {
+            const now = new Date();
+            const timestamp = now.toLocaleString('pt-BR');
+            if (type === 'import') {
+                lastImportLog.textContent = `Última importação: ${timestamp}`;
+            } else if (type === 'edit') {
+                lastEditLog.textContent = reset ? 'Última alteração: N/A' : `Última alteração: ${timestamp}`;
+            }
+        };
+
+        const handleHideColumn = (header) => {
+            columnVisibility[header] = false;
+            updateColumnTogglesUI();
+            applyFiltersAndRender();
+        };
+
+        const updateColumnTogglesUI = () => {
+            Object.entries(columnVisibility).forEach(([header, isVisible]) => {
+                const id = `toggle-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
+                const checkbox = document.getElementById(id);
+                if (checkbox) checkbox.checked = isVisible;
+            });
+        };
+
+        const openFilterDropdown = (header, button) => {
+            const filterOptions = document.getElementById('filter-options');
+            const filterSearch = document.getElementById('filter-search');
+            filterSearch.value = '';
+
+            const uniqueValues = [...new Set(originalData.map(row => (row[header] ?? '').toString()))].sort();
+            
+            const renderOptions = (search = '') => {
+                filterOptions.innerHTML = '';
+                const currentSelectedValues = columnCheckboxFilters[header];
+                const allSelected = currentSelectedValues.size === 0 || currentSelectedValues.size === uniqueValues.length;
+
+                filterOptions.innerHTML += `
+                    <label class="flex items-center space-x-2 p-1 rounded hover:bg-gray-600 font-semibold">
+                        <input type="checkbox" class="form-checkbox bg-gray-600 border-gray-500 text-blue-500" id="select-all-filter" ${allSelected ? 'checked' : ''}>
+                        <span>(Selecionar Tudo)</span>
+                    </label>`;
+
+                uniqueValues.filter(v => v.toLowerCase().includes(search.toLowerCase())).forEach(value => {
+                    filterOptions.innerHTML += `
+                        <label class="flex items-center space-x-2 p-1 rounded hover:bg-gray-600">
+                            <input type="checkbox" class="form-checkbox bg-gray-600 border-gray-500 text-blue-500 filter-option-cb" value="${value}" ${allSelected || currentSelectedValues.has(value) ? 'checked' : ''}>
+                            <span>${value || '(Vazio)'}</span>
+                        </label>`;
+                });
+            };
+
+            renderOptions();
+            
+            const rect = button.getBoundingClientRect();
+            filterDropdown.style.left = `${Math.min(rect.left, window.innerWidth - 256 - 20)}px`;
+            filterDropdown.style.top = `${rect.bottom + 5}px`;
+            filterDropdown.classList.remove('hidden');
+
+            const handleOk = () => {
+                const allAreChecked = document.getElementById('select-all-filter').checked;
+                if (allAreChecked) {
+                    columnCheckboxFilters[header] = new Set();
+                } else {
+                    const newSelected = new Set();
+                    document.querySelectorAll('.filter-option-cb:checked').forEach(cb => newSelected.add(cb.value));
+                    columnCheckboxFilters[header] = newSelected;
+                }
+                closeDropdown();
+                applyFiltersAndRender();
+            };
+
+            const closeDropdown = () => {
+                filterDropdown.classList.add('hidden');
+                document.removeEventListener('click', handleClickOutside, true);
+            };
+            
+            const handleClickOutside = (event) => {
+                if (!filterDropdown.contains(event.target) && !button.contains(event.target)) {
+                    closeDropdown();
+                }
+            };
+            
+            filterSearch.onkeyup = () => renderOptions(filterSearch.value);
+            document.getElementById('filter-ok').onclick = handleOk;
+            document.getElementById('filter-cancel').onclick = closeDropdown;
+            document.getElementById('select-all-filter').onchange = (e) => {
+                document.querySelectorAll('.filter-option-cb').forEach(cb => cb.checked = e.target.checked);
+            };
+            setTimeout(() => document.addEventListener('click', handleClickOutside, true), 0);
+        };
+
+        let thElm;
+        let startOffset;
+
+        const initResize = (e) => {
+            e.preventDefault();
+            thElm = e.target.parentElement;
+            startOffset = thElm.offsetWidth - e.pageX;
+            document.body.style.cursor = 'col-resize';
+            document.addEventListener('mousemove', doDrag);
+            document.addEventListener('mouseup', stopDrag);
+        };
+
+        const doDrag = (e) => {
+            if (thElm) {
+                const newWidth = startOffset + e.pageX;
+                if (newWidth > 50) {
+                    thElm.style.width = `${newWidth}px`;
+                    columnWidths[thElm.querySelector('.resize-handle').dataset.header] = newWidth;
+                }
+            }
+        };
+
+        const stopDrag = () => {
+            thElm = null;
+            document.body.style.cursor = 'default';
+            document.removeEventListener('mousemove', doDrag);
+            document.removeEventListener('mouseup', stopDrag);
+        };
+        
+        const showNotification = (message, type = 'info') => {
+            clearTimeout(notificationTimeout);
+            notificationMessage.textContent = message;
+            notification.classList.remove('bg-green-600', 'bg-red-600', 'bg-blue-600');
+            if (type === 'success') notification.classList.add('bg-green-600');
+            else if (type === 'error') notification.classList.add('bg-red-600');
+            else notification.classList.add('bg-blue-600');
+            notification.classList.remove('opacity-0', 'translate-x-[120%]');
+            notificationTimeout = setTimeout(() => {
+                notification.classList.add('opacity-0', 'translate-x-[120%]');
+            }, 4000);
+        };
+
+        const toggleMenu = (open) => {
+            menuOverlay.classList.toggle('hidden', !open);
+            menuPanel.classList.toggle('translate-x-full', !open);
+        };
+        
+        const renderColumnToggles = () => {
+            columnTogglesContainer.innerHTML = '';
+            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
+            headers.forEach(header => {
+                const id = `toggle-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
+                const toggleWrapper = document.createElement('div');
+                toggleWrapper.className = 'flex items-center';
+                toggleWrapper.innerHTML = `
+                    <input id="${id}" type="checkbox" ${columnVisibility[header] ? 'checked' : ''} class="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-blue-600 bg-gray-700">
+                    <label for="${id}" class="ml-3 text-sm text-gray-300 truncate">${header}</label>
+                `;
+                toggleWrapper.querySelector('input').addEventListener('change', (e) => {
+                    columnVisibility[header] = e.target.checked;
+                    applyFiltersAndRender();
+                });
+                columnTogglesContainer.appendChild(toggleWrapper);
+            });
+            columnToggleSection.classList.remove('hidden');
+        };
+
+        const handleFileSelect = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            filePathDisplay.textContent = file.name;
+            const reader = new FileReader();
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+
+            reader.onload = (e) => {
+                try {
+                    let jsonData;
+                    if (fileExtension === 'json') {
+                        jsonData = JSON.parse(e.target.result);
+                    } else if (['xlsx', 'csv'].includes(fileExtension)) {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        jsonData = XLSX.utils.sheet_to_json(worksheet);
+                    }
+                    loadData(jsonData, file.name);
+                } catch (err) {
+                    console.error("Erro ao processar arquivo:", err);
+                    showNotification('Erro ao processar o arquivo. Verifique se o formato está correto.', 'error');
+                }
+            };
+
+            reader.onerror = () => {
+                 console.error("Erro ao ler o arquivo:", reader.error);
+                 showNotification('Não foi possível ler o arquivo selecionado.', 'error');
+            };
+
+            if (fileExtension === 'json') {
+                reader.readAsText(file);
+            } else if (['xlsx', 'csv'].includes(fileExtension)) {
+                reader.readAsArrayBuffer(file);
+            } else {
+                showNotification('Formato de arquivo não suportado. Selecione .json ou .xlsx.', 'error');
+                filePathDisplay.textContent = 'Nenhum arquivo selecionado.';
+            }
+            
+            toggleMenu(false);
+            fileInput.value = '';
+        };
+        
+        const exportToXlsx = () => {
+            if (originalData.length === 0) {
+                showNotification('Não há dados para exportar.', 'info');
+                return;
+            }
+            
+            const dataToExport = originalData.map(row => {
+                const newRow = {...row};
+                delete newRow.__internal_id; // Remove a chave interna antes de exportar
+                return newRow;
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
+            XLSX.writeFile(workbook, 'dados_exportados.xlsx');
+        };
+
+        // --- EVENT LISTENERS GERAIS ---
+        menuButton.addEventListener('click', () => toggleMenu(true));
+        closeMenuButton.addEventListener('click', () => toggleMenu(false));
+        menuOverlay.addEventListener('click', () => toggleMenu(false));
+        loadFileButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileSelect);
+        exportXlsxButton.addEventListener('click', exportToXlsx);
+        adminModeToggle.addEventListener('click', toggleAdminMode);
+        
+        modalCancelBtn.addEventListener('click', hideConfirmation);
+        modalConfirmBtn.addEventListener('click', () => {
+            if(typeof modalConfirmCallback === 'function') {
+                modalConfirmCallback();
+            }
+            hideConfirmation();
+        });
+
+        // --- INICIALIZAÇÃO ---
+        loadData(initialJsonData, "Dados de Exemplo");
+        filePathDisplay.textContent = "Dados de exemplo carregados.";
+    });
+    </script>
+</body>
+</html>
