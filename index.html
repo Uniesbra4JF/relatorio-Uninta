@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Dados Avançado</title>
+    <title>Visualizador de Dados Avançado!</title>
     
     <!-- Tailwind CSS para estilização rápida e responsiva -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -84,7 +84,7 @@
             <div class="flex items-center gap-4">
                  <h1 class="text-xl font-bold text-white flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
-                    Visualizador de Dados
+                    Visualizador de Dados!!
                 </h1>
                 <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -319,9 +319,9 @@
                 
                 tableHTML += `
                     <th scope="col" class="px-3 py-2 relative border border-gray-700" ${widthStyle}>
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="font-semibold whitespace-nowrap truncate" title="${header}" data-header-name="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${header}</span>
-                            <div class="flex items-center flex-shrink-0">
+                        <div class="flex flex-col items-center justify-center h-full">
+                            <span class="font-semibold text-center w-full truncate" title="${header}" data-header-name="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${header}</span>
+                            <div class="flex items-center justify-center mt-1">
                                 <button class="p-1 rounded hover:bg-gray-600 filter-btn ${filterActiveClass}" title="Filtrar coluna" data-header="${header}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                                 </button>
@@ -630,34 +630,38 @@
 
         const autoSizeColumns = () => {
             const table = tableContainer.querySelector('table');
-            if (!table || Object.keys(columnWidths).length > 0) return; // Não auto-ajusta se já houver larguras salvas
+            if (!table || Object.keys(columnWidths).length > 0) {
+                if(table) table.style.tableLayout = 'fixed';
+                return;
+            }
 
+            table.style.tableLayout = 'auto'; // Permite que o navegador calcule a largura
             const headers = Array.from(table.querySelectorAll('thead th'));
             const containerWidth = tableContainer.clientWidth;
-            const minColWidth = 150; // Largura mínima
+            const minColWidth = 150;
             
             let totalWidth = 0;
-            headers.forEach(th => {
-                const handle = th.querySelector('.resize-handle');
-                if(handle) {
-                    const width = Math.max(minColWidth, th.getBoundingClientRect().width);
-                    totalWidth += width;
-                } else {
-                    totalWidth += th.getBoundingClientRect().width; // Para a coluna de Ações
-                }
-            });
+            headers.forEach(th => totalWidth += th.getBoundingClientRect().width);
 
             if (totalWidth < containerWidth) {
                 const extraWidth = (containerWidth - totalWidth) / (headers.length - (isAdminModeActive ? 1 : 0));
                 headers.forEach(th => {
                     const handle = th.querySelector('.resize-handle');
                     if(handle) {
-                        const currentWidth = Math.max(minColWidth, th.getBoundingClientRect().width);
+                        const currentWidth = th.getBoundingClientRect().width;
                         columnWidths[handle.dataset.header] = currentWidth + extraWidth;
                     }
                 });
-                applyFiltersAndRender(); // Re-renderiza com as novas larguras
+            } else {
+                 headers.forEach(th => {
+                    const handle = th.querySelector('.resize-handle');
+                    if(handle) {
+                        columnWidths[handle.dataset.header] = Math.max(minColWidth, th.getBoundingClientRect().width);
+                    }
+                });
             }
+            table.style.tableLayout = 'fixed'; // Trava as larguras calculadas
+            applyFiltersAndRender();
         };
 
         const initResize = (e) => {
@@ -667,15 +671,6 @@
             
             const table = thElm.closest('table');
             if(table.style.tableLayout !== 'fixed') {
-                const headers = Array.from(table.querySelectorAll('thead th'));
-                headers.forEach(th => {
-                    const handle = th.querySelector('.resize-handle');
-                    if(handle) {
-                        const width = th.getBoundingClientRect().width;
-                        columnWidths[handle.dataset.header] = width;
-                        th.style.width = `${width}px`;
-                    }
-                });
                 table.style.tableLayout = 'fixed';
             }
 
