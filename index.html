@@ -84,7 +84,7 @@
             <div class="flex items-center gap-4">
                  <h1 class="text-xl font-bold text-white flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
-                    Visualizador de Dados!
+                    Visualizador de Dados
                 </h1>
                 <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
@@ -255,10 +255,13 @@
                 showNotification('O arquivo não contém dados válidos ou está vazio.', 'error');
                 return;
             }
+            
+            const allKeys = new Set();
+            data.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
+            const headers = [...allKeys];
+
             originalData = data.map((row, index) => ({ ...row, __internal_id: row.__internal_id ?? index }));
             dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
-
-            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
             
             columnCheckboxFilters = headers.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
             columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
@@ -313,8 +316,11 @@
                  return;
             }
 
-            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
-            const visibleHeaders = headers.filter(h => columnVisibility[h]);
+            const allKeys = new Set();
+            originalData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
+            allKeys.delete('__internal_id');
+            const headers = [...allKeys];
+            const visibleHeaders = headers.filter(h => columnVisibility[h] ?? true);
 
             let tableHTML = `<table class="min-w-full text-sm text-left text-gray-300 resizable-table">`;
             // Cabeçalho
@@ -677,6 +683,15 @@
             
             const table = thElm.closest('table');
             if(table.style.tableLayout !== 'fixed') {
+                const headers = Array.from(table.querySelectorAll('thead th'));
+                headers.forEach(th => {
+                    const width = th.getBoundingClientRect().width;
+                    const handle = th.querySelector('.resize-handle');
+                    if (handle) {
+                        columnWidths[handle.dataset.header] = width;
+                        th.style.width = `${width}px`;
+                    }
+                });
                 table.style.tableLayout = 'fixed';
             }
 
@@ -725,7 +740,11 @@
         const renderColumnToggles = () => {
             columnTogglesContainer.innerHTML = '';
             if(!originalData || originalData.length === 0) return;
-            const headers = Object.keys(originalData[0] || {}).filter(h => h !== '__internal_id');
+            const allKeys = new Set();
+            originalData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
+            allKeys.delete('__internal_id');
+            const headers = [...allKeys];
+
             headers.forEach(header => {
                 const id = `toggle-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
                 const toggleWrapper = document.createElement('div');
@@ -835,12 +854,19 @@
                 originalData = savedData;
                 dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
                 
+                const allKeys = new Set();
+                originalData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
+                allKeys.delete('__internal_id');
+                const headers = [...allKeys];
+
                 const savedVisibility = loadState('visibility');
+                const defaultVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
+                columnVisibility = { ...defaultVisibility, ...savedVisibility };
+
                 const savedWidths = loadState('widths');
                 const savedFilters = loadState('filters');
                 const savedAdminMode = loadState('adminMode');
                 
-                if (savedVisibility) columnVisibility = savedVisibility;
                 if (savedWidths) columnWidths = savedWidths;
                 if (savedFilters) {
                     Object.entries(savedFilters).forEach(([key, value]) => {
