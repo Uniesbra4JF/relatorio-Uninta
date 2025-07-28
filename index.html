@@ -403,7 +403,10 @@
             const headers = [...allKeys];
             const visibleHeaders = headers.filter(h => columnVisibility[h] ?? true);
 
-            let tableHTML = `<table class="min-w-full text-sm text-left text-gray-300 resizable-table">`;
+            const hasPredefinedWidths = Object.keys(columnWidths).length > 0;
+            const tableLayout = hasPredefinedWidths ? 'fixed' : 'auto';
+
+            let tableHTML = `<table class="min-w-full text-sm text-left text-gray-300 resizable-table" style="table-layout: ${tableLayout};">`;
             // Cabeçalho
             tableHTML += `<thead class="text-xs text-gray-300 uppercase bg-gray-800"><tr>`;
             if(isAdminModeActive) {
@@ -477,7 +480,6 @@
             tableHTML += `</tbody></table>`;
             
             tableContainer.innerHTML = tableHTML;
-            setTimeout(autoSizeColumns, 0); 
             attachTableEventListeners();
         };
         
@@ -750,35 +752,19 @@
         const autoSizeColumns = () => {
             const table = tableContainer.querySelector('table');
             if (!table || Object.keys(columnWidths).length > 0) {
-                if(table) table.style.tableLayout = 'fixed';
                 return;
             }
-
-            table.style.tableLayout = 'auto'; // Permite que o navegador calcule a largura
-            const headers = Array.from(table.querySelectorAll('thead th'));
-            const containerWidth = tableContainer.clientWidth;
-            const minColWidth = 150;
             
-            let totalWidth = 0;
-            headers.forEach(th => totalWidth += th.getBoundingClientRect().width);
-
-            if (totalWidth < containerWidth) {
-                const resizableHeaders = headers.filter(h => h.querySelector('.resize-handle'));
-                const extraWidth = (containerWidth - totalWidth) / (resizableHeaders.length || 1);
-                resizableHeaders.forEach(th => {
-                    const handle = th.querySelector('.resize-handle');
-                    const currentWidth = th.getBoundingClientRect().width;
-                    columnWidths[handle.dataset.header] = currentWidth + extraWidth;
-                });
-            } else {
-                 headers.forEach(th => {
-                    const handle = th.querySelector('.resize-handle');
-                    if(handle) {
-                        columnWidths[handle.dataset.header] = Math.max(minColWidth, th.getBoundingClientRect().width);
-                    }
-                });
-            }
-            table.style.tableLayout = 'fixed'; // Trava as larguras calculadas
+            table.style.tableLayout = 'auto';
+            const headers = Array.from(table.querySelectorAll('thead th'));
+            headers.forEach(th => {
+                const handle = th.querySelector('.resize-handle');
+                if (handle) {
+                    columnWidths[handle.dataset.header] = th.getBoundingClientRect().width;
+                }
+            });
+            table.style.tableLayout = 'fixed';
+            saveState('widths', columnWidths);
             applyFiltersAndRender();
         };
 
@@ -1148,14 +1134,7 @@
         exportXlsxButton.addEventListener('click', exportToXlsx);
         adminModeToggle.addEventListener('click', toggleAdminMode);
         clearCacheButton.addEventListener('click', handleClearCache);
-        clearFormattingButton.addEventListener('click', () => {
-             showConfirmation("Tem certeza que deseja apagar TODAS as regras de formatação condicional?", () => {
-                columnFormattingRules = {};
-                saveState('formatting', {});
-                applyFiltersAndRender();
-                showNotification('Todas as regras de formatação foram removidas.', 'success');
-            });
-        });
+        clearFormattingButton.addEventListener('click', handleClearFormatting);
         
         modalCancelBtn.addEventListener('click', hideConfirmation);
         modalConfirmBtn.addEventListener('click', () => {
