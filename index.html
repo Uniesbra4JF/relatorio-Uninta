@@ -57,8 +57,8 @@
         }
         
         /* Estilos para Modo Administrador */
-        .admin-active .delete-row-btn, .admin-active .delete-col-btn { display: inline-block; }
-        .delete-row-btn, .delete-col-btn { display: none; }
+        .admin-active .delete-row-btn, .admin-active .delete-col-btn, .admin-active .format-col-btn { display: inline-block; }
+        .delete-row-btn, .delete-col-btn, .format-col-btn { display: none; }
         [contenteditable="true"] {
             cursor: cell;
             outline: none;
@@ -67,6 +67,20 @@
         [contenteditable="true"]:focus {
             box-shadow: 0 0 0 2px #3b82f6; /* ring-blue-500 */
             border-radius: 2px;
+        }
+        
+        /* Estilos para paleta de cores */
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.1s ease-in-out;
+        }
+        .color-swatch.selected {
+            border-color: #60a5fa; /* border-blue-400 */
+            transform: scale(1.1);
         }
     </style>
     <!-- Importação da fonte Inter do Google Fonts -->
@@ -182,6 +196,42 @@
             </div>
         </div>
     </div>
+    
+    <!-- Modal de Formatação Condicional -->
+    <div id="formatting-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h3 class="text-lg font-bold text-white mb-1">Formatação Condicional</h3>
+            <p class="text-sm text-gray-400 mb-4">Coluna: <span id="format-col-name" class="font-semibold"></span></p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="format-text-input" class="block text-sm font-medium text-gray-300 mb-1">Se o valor da célula for igual a:</label>
+                    <input type="text" id="format-text-input" class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Digite o texto exato...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Cor do Fundo:</label>
+                    <div id="bg-color-palette" class="flex gap-2 flex-wrap"></div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Cor do Texto:</label>
+                    <div id="text-color-palette" class="flex gap-2 flex-wrap"></div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-between items-center">
+                <button id="format-apply" class="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold">Aplicar</button>
+                <button id="format-close" class="px-4 py-2 rounded-md bg-gray-600 hover:bg-gray-500 text-white font-semibold">Fechar</button>
+            </div>
+            
+            <div class="mt-6 border-t border-gray-700 pt-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="text-md font-semibold text-white">Regras Atuais</h4>
+                    <button id="format-clear-all" class="text-xs text-blue-400 hover:text-blue-300">Limpar Todas as Regras</button>
+                </div>
+                <div id="current-rules-list" class="max-h-32 overflow-y-auto space-y-2 pr-2"></div>
+            </div>
+        </div>
+    </div>
 
 
     <script>
@@ -192,9 +242,11 @@
         let columnCheckboxFilters = {};
         let columnVisibility = {};
         let columnWidths = {};
+        let columnFormattingRules = {};
         let notificationTimeout;
         let isAdminModeActive = false;
         let modalConfirmCallback = null;
+        let currentFormattingColumn = null;
 
         // --- ELEMENTOS DO DOM ---
         const app = document.getElementById('app');
@@ -220,6 +272,7 @@
         const lastImportLog = document.getElementById('last-import-log');
         const lastEditLog = document.getElementById('last-edit-log');
         const clearCacheButton = document.getElementById('clear-cache-button');
+        const formattingModal = document.getElementById('formatting-modal');
 
         // --- DADOS INICIAIS (para demonstração) ---
         const initialJsonData = [
@@ -266,6 +319,7 @@
             columnCheckboxFilters = headers.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
             columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
             columnWidths = {};
+            columnFormattingRules = {};
             
             updateLog('import', false, fileName);
             updateLog('edit', true); // Reseta o log de edição
@@ -291,6 +345,7 @@
             saveState('adminMode', isAdminModeActive);
             saveState('importLog', lastImportLog.innerHTML);
             saveState('editLog', lastEditLog.textContent);
+            saveState('formatting', columnFormattingRules);
         };
 
         const applyFiltersAndRender = () => {
@@ -344,6 +399,9 @@
                                 <button class="p-1 rounded hover:bg-gray-600 hide-col-btn" title="Ocultar coluna" data-header="${header}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                 </button>
+                                <button class="p-1 rounded hover:bg-gray-600 format-col-btn" title="Formatação Condicional" data-header="${header}">
+                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0L12 2.69z"></path></svg>
+                                </button>
                                 <button class="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-red-500 delete-col-btn" title="Deletar coluna" data-header="${header}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                 </button>
@@ -369,7 +427,12 @@
                     }
                     visibleHeaders.forEach(header => {
                         const value = row[header] ?? '';
-                        tableHTML += `<td class="px-3 py-2 whitespace-nowrap truncate border border-gray-700" data-cell-header="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${value}</td>`;
+                        const rules = columnFormattingRules[header];
+                        let style = '';
+                        if(rules && rules[value]) {
+                            style = `style="background-color: ${rules[value].bgColor}; color: ${rules[value].textColor};"`;
+                        }
+                        tableHTML += `<td class="px-3 py-2 whitespace-nowrap truncate border border-gray-700" data-cell-header="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''} ${style}>${value}</td>`;
                     });
                     tableHTML += `</tr>`;
                 });
@@ -431,6 +494,7 @@
             updateStateKey(columnCheckboxFilters);
             updateStateKey(columnVisibility);
             updateStateKey(columnWidths);
+            updateStateKey(columnFormattingRules);
             
             updateLog('edit');
             saveAllState();
@@ -456,6 +520,7 @@
             delete columnVisibility[headerToDelete];
             delete columnCheckboxFilters[headerToDelete];
             delete columnWidths[headerToDelete];
+            delete columnFormattingRules[headerToDelete];
 
             updateLog('edit');
             saveAllState();
@@ -503,6 +568,10 @@
                         const header = e.currentTarget.dataset.header;
                         showConfirmation(`Tem certeza que deseja deletar a coluna "${header}"? Esta ação não pode ser desfeita.`, () => handleDeleteColumn(header));
                     });
+                });
+                
+                document.querySelectorAll('.format-col-btn').forEach(button => {
+                    button.addEventListener('click', (e) => openFormattingModal(e.currentTarget.dataset.header));
                 });
 
                 document.querySelectorAll('[contenteditable="true"]').forEach(el => {
@@ -846,6 +915,125 @@
             }
         };
 
+        // --- FORMATAÇÃO CONDICIONAL ---
+        const colorPalette = {
+            bg: ['#1e3a8a', '#15803d', '#b91c1c', '#be123c', '#a16207', '#4a044e', '#1e1b4b', '#374151'],
+            text: ['#ffffff', '#f0f9ff', '#d1d5db', '#facc15', '#a7f3d0', '#fecaca']
+        };
+
+        const openFormattingModal = (header) => {
+            currentFormattingColumn = header;
+            document.getElementById('format-col-name').textContent = header;
+            
+            const createPalette = (containerId, colors, type) => {
+                const container = document.getElementById(containerId);
+                container.innerHTML = '';
+                colors.forEach(color => {
+                    const swatch = document.createElement('div');
+                    swatch.className = 'color-swatch';
+                    swatch.style.backgroundColor = color;
+                    swatch.dataset.color = color;
+                    swatch.onclick = () => {
+                        container.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+                        swatch.classList.add('selected');
+                    };
+                    container.appendChild(swatch);
+                });
+            };
+
+            createPalette('bg-color-palette', colorPalette.bg, 'bg');
+            createPalette('text-color-palette', colorPalette.text, 'text');
+            
+            renderCurrentRules();
+            formattingModal.classList.remove('hidden');
+            formattingModal.classList.add('flex');
+        };
+
+        const closeFormattingModal = () => {
+            formattingModal.classList.add('hidden');
+            formattingModal.classList.remove('flex');
+            currentFormattingColumn = null;
+        };
+
+        const applyFormattingRule = () => {
+            const text = document.getElementById('format-text-input').value;
+            if (!text) {
+                showNotification('Por favor, digite um texto para a condição.', 'error');
+                return;
+            }
+            const selectedBg = document.querySelector('#bg-color-palette .selected');
+            const selectedText = document.querySelector('#text-color-palette .selected');
+
+            if (!selectedBg || !selectedText) {
+                showNotification('Por favor, selecione uma cor de fundo e uma cor de texto.', 'error');
+                return;
+            }
+
+            if (!columnFormattingRules[currentFormattingColumn]) {
+                columnFormattingRules[currentFormattingColumn] = {};
+            }
+            
+            columnFormattingRules[currentFormattingColumn][text] = {
+                bgColor: selectedBg.dataset.color,
+                textColor: selectedText.dataset.color
+            };
+            
+            updateLog('edit');
+            saveState('formatting', columnFormattingRules);
+            applyFiltersAndRender();
+            renderCurrentRules();
+            document.getElementById('format-text-input').value = '';
+        };
+        
+        const renderCurrentRules = () => {
+            const list = document.getElementById('current-rules-list');
+            list.innerHTML = '';
+            const rules = columnFormattingRules[currentFormattingColumn];
+            if (!rules || Object.keys(rules).length === 0) {
+                list.innerHTML = '<p class="text-sm text-gray-500">Nenhuma regra aplicada.</p>';
+                return;
+            }
+            
+            Object.entries(rules).forEach(([text, format]) => {
+                const ruleDiv = document.createElement('div');
+                ruleDiv.className = 'flex items-center justify-between bg-gray-700 p-2 rounded-md';
+                ruleDiv.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <div class="w-4 h-4 rounded" style="background-color: ${format.bgColor}; color: ${format.textColor}; border: 1px solid #4b5563;"></div>
+                        <span class="text-sm" style="color: ${format.textColor};">${text}</span>
+                    </div>
+                    <button class="p-1 text-gray-400 hover:text-red-500 remove-rule-btn" data-text="${text}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                `;
+                list.appendChild(ruleDiv);
+            });
+            
+            document.querySelectorAll('.remove-rule-btn').forEach(btn => {
+                btn.onclick = () => removeFormattingRule(btn.dataset.text);
+            });
+        };
+        
+        const removeFormattingRule = (text) => {
+            if (columnFormattingRules[currentFormattingColumn] && columnFormattingRules[currentFormattingColumn][text]) {
+                delete columnFormattingRules[currentFormattingColumn][text];
+                updateLog('edit');
+                saveState('formatting', columnFormattingRules);
+                applyFiltersAndRender();
+                renderCurrentRules();
+            }
+        };
+
+        const clearAllFormattingRules = () => {
+            if (columnFormattingRules[currentFormattingColumn]) {
+                delete columnFormattingRules[currentFormattingColumn];
+                updateLog('edit');
+                saveState('formatting', columnFormattingRules);
+                applyFiltersAndRender();
+                renderCurrentRules();
+            }
+        };
+
         // --- INICIALIZAÇÃO DA APLICAÇÃO ---
         const initializeApp = () => {
             const savedData = loadState('data');
@@ -866,6 +1054,7 @@
                 const savedWidths = loadState('widths');
                 const savedFilters = loadState('filters');
                 const savedAdminMode = loadState('adminMode');
+                const savedFormatting = loadState('formatting');
                 
                 if (savedWidths) columnWidths = savedWidths;
                 if (savedFilters) {
@@ -878,6 +1067,9 @@
                     app.classList.toggle('admin-active', isAdminModeActive);
                     adminModeToggle.classList.toggle('text-yellow-400', isAdminModeActive);
                     adminModeToggle.classList.toggle('bg-gray-700', isAdminModeActive);
+                }
+                if (savedFormatting) {
+                    columnFormattingRules = savedFormatting;
                 }
 
                 lastImportLog.innerHTML = loadState('importLog') || 'Última importação: N/A';
@@ -911,6 +1103,11 @@
             }
             hideConfirmation();
         });
+        
+        // Listeners do Modal de Formatação
+        document.getElementById('format-close').addEventListener('click', closeFormattingModal);
+        document.getElementById('format-apply').addEventListener('click', applyFormattingRule);
+        document.getElementById('format-clear-all').addEventListener('click', clearAllFormattingRules);
 
         initializeApp();
     });
