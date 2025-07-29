@@ -368,15 +368,19 @@
             
             const allKeys = new Set();
             data.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
-            const headers = [...allKeys];
+            const newHeaders = [...allKeys];
 
             originalData = data.map((row, index) => ({ ...row, __internal_id: row.__internal_id ?? index }));
             dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
             
             if (!isRestoring) {
-                columnOrder = headers;
-                columnCheckboxFilters = headers.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
-                columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
+                const savedOrder = loadState('order') || [];
+                const preservedOrder = savedOrder.filter(h => newHeaders.includes(h));
+                const newColumns = newHeaders.filter(h => !savedOrder.includes(h));
+                columnOrder = [...preservedOrder, ...newColumns];
+
+                columnCheckboxFilters = newHeaders.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
+                columnVisibility = newHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {});
                 columnWidths = {};
                 updateLog('import', false, fileName);
                 updateLog('edit', true);
