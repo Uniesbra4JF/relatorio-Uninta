@@ -59,6 +59,12 @@
         /* Estilos para Modo Administrador */
         .admin-active .delete-row-btn, .admin-active .delete-col-btn, .admin-active .format-col-btn { display: inline-block; }
         .delete-row-btn, .delete-col-btn, .format-col-btn { display: none; }
+        .admin-active thead th { cursor: grab; }
+        .admin-active thead th:active { cursor: grabbing; }
+        
+        .dragging { opacity: 0.5; }
+        .drag-over-indicator { border-left: 3px solid #3b82f6; } /* Indicador de onde a coluna será solta */
+
         [contenteditable="true"] {
             cursor: cell;
             outline: none;
@@ -264,6 +270,7 @@
         // --- VARIÁVEIS GLOBAIS ---
         let originalData = [];
         let dataMap = new Map();
+        let columnOrder = [];
         let columnCheckboxFilters = {};
         let columnVisibility = {};
         let columnWidths = {};
@@ -343,6 +350,7 @@
             dataMap = new Map(originalData.map(row => [row.__internal_id, row]));
             
             if (!isRestoring) {
+                columnOrder = headers;
                 columnCheckboxFilters = headers.reduce((acc, h) => ({...acc, [h]: new Set() }), {});
                 columnVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
                 columnWidths = {};
@@ -361,6 +369,7 @@
         
         const saveAllState = () => {
             saveState('data', originalData);
+            saveState('order', columnOrder);
             saveState('visibility', columnVisibility);
             saveState('widths', columnWidths);
             const serializableFilters = {};
@@ -397,11 +406,7 @@
                  return;
             }
 
-            const allKeys = new Set();
-            originalData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
-            allKeys.delete('__internal_id');
-            const headers = [...allKeys];
-            const visibleHeaders = headers.filter(h => columnVisibility[h] ?? true);
+            const visibleHeaders = columnOrder.filter(h => columnVisibility[h] ?? true);
 
             const hasPredefinedWidths = Object.keys(columnWidths).length > 0;
             const tableLayout = hasPredefinedWidths ? 'fixed' : 'auto';
@@ -419,7 +424,7 @@
                 const filterActiveClass = columnCheckboxFilters[header]?.size > 0 && columnCheckboxFilters[header].size < uniqueValuesInCol.size ? 'text-blue-400' : '';
                 
                 tableHTML += `
-                    <th scope="col" class="px-3 py-2 relative border border-gray-700" ${widthStyle}>
+                    <th scope="col" class="px-3 py-2 relative border border-gray-700" ${widthStyle} data-header-name="${header}" ${isAdminModeActive ? 'draggable="true"' : ''}>
                         <div class="flex flex-col items-center justify-center h-full">
                             <span class="font-semibold text-center w-full truncate" title="${header}" data-header-name="${header}" ${isAdminModeActive ? 'contenteditable="true"' : ''}>${header}</span>
                             <div class="flex items-center justify-center mt-1">
@@ -526,6 +531,13 @@
                     delete row[oldHeader];
                 }
             });
+            
+            // Atualiza a ordem das colunas também
+            const orderIndex = columnOrder.indexOf(oldHeader);
+            if (orderIndex > -1) {
+                columnOrder[orderIndex] = newHeader;
+            }
+
             const updateStateKey = (stateObj) => {
                  if (stateObj && Object.prototype.hasOwnProperty.call(stateObj, oldHeader)) {
                     stateObj[newHeader] = stateObj[oldHeader];
@@ -558,6 +570,7 @@
                 delete row[headerToDelete];
             });
 
+            columnOrder = columnOrder.filter(h => h !== headerToDelete);
             delete columnVisibility[headerToDelete];
             delete columnCheckboxFilters[headerToDelete];
             delete columnWidths[headerToDelete];
@@ -640,6 +653,52 @@
                         } else if (target.dataset.headerName) {
                             handleHeaderEdit(target, target.dataset.headerName);
                         }
+                    });
+                });
+                
+                // Drag and Drop para colunas
+                let draggedHeader = null;
+                document.querySelectorAll('thead th[draggable="true"]').forEach(th => {
+                    th.addEventListener('dragstart', (e) => {
+                        draggedHeader = e.target.closest('th').dataset.headerName;
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.target.closest('th').classList.add('dragging');
+                    });
+                    
+                    th.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        const targetHeader = e.target.closest('th');
+                        if (targetHeader && targetHeader.dataset.headerName !== draggedHeader) {
+                             document.querySelectorAll('thead th').forEach(h => h.classList.remove('drag-over-indicator'));
+                             targetHeader.classList.add('drag-over-indicator');
+                        }
+                    });
+                    
+                    th.addEventListener('dragleave', (e) => {
+                        e.target.closest('th').classList.remove('drag-over-indicator');
+                    });
+
+                    th.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        const targetHeaderEl = e.target.closest('th');
+                        targetHeaderEl.classList.remove('drag-over-indicator');
+                        const targetHeader = targetHeaderEl.dataset.headerName;
+                        
+                        if (draggedHeader && targetHeader && draggedHeader !== targetHeader) {
+                            const oldIndex = columnOrder.indexOf(draggedHeader);
+                            const newIndex = columnOrder.indexOf(targetHeader);
+                            
+                            columnOrder.splice(oldIndex, 1);
+                            columnOrder.splice(newIndex, 0, draggedHeader);
+                            
+                            saveState('order', columnOrder);
+                            applyFiltersAndRender();
+                        }
+                    });
+
+                    th.addEventListener('dragend', (e) => {
+                        e.target.closest('th').classList.remove('dragging');
+                        draggedHeader = null;
                     });
                 });
             }
@@ -815,12 +874,8 @@
         const renderColumnToggles = () => {
             columnTogglesContainer.innerHTML = '';
             if(!originalData || originalData.length === 0) return;
-            const allKeys = new Set();
-            originalData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
-            allKeys.delete('__internal_id');
-            const headers = [...allKeys];
-
-            headers.forEach(header => {
+            
+            columnOrder.forEach(header => {
                 const id = `toggle-${header.replace(/[^a-zA-Z0-9]/g, '')}`;
                 const toggleWrapper = document.createElement('div');
                 toggleWrapper.className = 'flex items-center';
@@ -901,7 +956,7 @@
 
             const dataToExport = filteredData.map((row, index) => {
                 const newRow = { "Nº": index + 1 };
-                const visibleHeaders = Object.keys(row).filter(h => h !== '__internal_id' && (columnVisibility[h] ?? true));
+                const visibleHeaders = columnOrder.filter(h => columnVisibility[h] ?? true);
                 visibleHeaders.forEach(header => {
                     newRow[header] = row[header];
                 });
@@ -1085,13 +1140,23 @@
             const savedData = loadState('data');
             
             if (savedData && savedData.length > 0) {
+                const savedOrder = loadState('order');
                 const savedVisibility = loadState('visibility');
                 const savedWidths = loadState('widths');
                 const savedFilters = loadState('filters');
                 const savedAdminMode = loadState('adminMode');
                 const savedFormatting = loadState('formatting');
+
+                const allKeys = new Set();
+                savedData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
+                allKeys.delete('__internal_id');
+                const headers = [...allKeys];
+
+                columnOrder = savedOrder && savedOrder.length === headers.length ? savedOrder : headers;
                 
-                if (savedVisibility) columnVisibility = savedVisibility;
+                const defaultVisibility = headers.reduce((acc, h) => ({ ...acc, [h]: true }), {});
+                columnVisibility = { ...defaultVisibility, ...savedVisibility };
+                
                 if (savedWidths) columnWidths = savedWidths;
                 if (savedFilters) {
                     Object.entries(savedFilters).forEach(([key, value]) => {
