@@ -26,14 +26,18 @@
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
 
-        /* Cabeçalho fixo da tabela */
+        /* Cabeçalho da tabela */
         thead th {
+            overflow: hidden;
+        }
+
+        /* Congelamento condicional do cabeçalho */
+        .header-frozen thead th {
             position: sticky;
             top: 0;
             z-index: 10;
             background-color: #1f2937; /* bg-gray-800 */
             box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4);
-            overflow: hidden;
         }
         
         /* Tabela com layout inicial automático */
@@ -118,6 +122,9 @@
                 </h1>
                 <button id="admin-mode-toggle" title="Ativar Modo Administrador" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                </button>
+                <button id="freeze-header-toggle" title="Congelar Cabeçalho" class="p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.061 3.243a5.53 5.53 0 0 1 0 7.822l-6.237 6.237a1.04 1.04 0 0 1-1.47 0l-1.586-1.586a1.04 1.04 0 0 1 0-1.47l6.237-6.237a5.53 5.53 0 0 1 7.822 0L21.2 9.2a1.04 1.04 0 0 1 0 1.47l-1.586 1.586a1.04 1.04 0 0 1-1.47 0L12 6.116"></path><path d="m12 6.116 5.66-5.66"></path><path d="M3 21l6-6"></path></svg>
                 </button>
             </div>
             <button id="menu-button" class="p-2 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -291,6 +298,7 @@
         let columnFormattingRules = {};
         let notificationTimeout;
         let isAdminModeActive = false;
+        let isHeaderFrozen = true;
         let modalConfirmCallback = null;
         let currentFormattingColumn = null;
 
@@ -305,6 +313,7 @@
         const filePathDisplay = document.getElementById('file-path-display');
         const exportXlsxButton = document.getElementById('export-xlsx-button');
         const adminModeToggle = document.getElementById('admin-mode-toggle');
+        const freezeHeaderToggle = document.getElementById('freeze-header-toggle');
         const tableContainer = document.getElementById('table-container');
         const placeholder = document.getElementById('placeholder');
         const columnToggleSection = document.getElementById('column-toggle-section');
@@ -393,6 +402,7 @@
             });
             saveState('filters', serializableFilters);
             saveState('adminMode', isAdminModeActive);
+            saveState('freeze', isHeaderFrozen);
             saveState('importLog', lastImportLog.innerHTML);
             saveState('editLog', lastEditLog.textContent);
             saveState('formatting', columnFormattingRules);
@@ -426,8 +436,9 @@
 
             const hasPredefinedWidths = Object.keys(columnWidths).length > 0;
             const tableLayout = hasPredefinedWidths ? 'fixed' : 'auto';
+            const tableClasses = `min-w-full text-sm text-left text-gray-300 resizable-table ${isHeaderFrozen ? 'header-frozen' : ''}`;
 
-            let tableHTML = `<table class="min-w-full text-sm text-left text-gray-300 resizable-table" style="table-layout: ${tableLayout};">`;
+            let tableHTML = `<table class="${tableClasses}" style="table-layout: ${tableLayout};">`;
             // Cabeçalho
             tableHTML += `<thead class="text-xs text-gray-300 uppercase bg-gray-800"><tr>`;
             tableHTML += `<th class="px-2 py-2 border border-gray-700 text-center" style="width: 50px;">Nº</th>`;
@@ -1185,6 +1196,7 @@
                 const savedFilters = loadState('filters');
                 const savedAdminMode = loadState('adminMode');
                 const savedFormatting = loadState('formatting');
+                const savedFreeze = loadState('freeze');
 
                 const allKeys = new Set();
                 savedData.forEach(row => Object.keys(row).forEach(key => allKeys.add(key)));
@@ -1211,6 +1223,10 @@
                 if (savedFormatting) {
                     columnFormattingRules = savedFormatting;
                 }
+                if (savedFreeze !== undefined) {
+                    isHeaderFrozen = savedFreeze;
+                }
+                updateFreezeButtonState();
 
                 lastImportLog.innerHTML = loadState('importLog') || 'Última importação: N/A';
                 lastEditLog.textContent = loadState('editLog') || 'Última alteração: N/A';
@@ -1225,6 +1241,18 @@
             }
         };
 
+        const updateFreezeButtonState = () => {
+            freezeHeaderToggle.classList.toggle('text-blue-400', isHeaderFrozen);
+            freezeHeaderToggle.classList.toggle('bg-gray-700', isHeaderFrozen);
+        };
+
+        const toggleHeaderFreeze = () => {
+            isHeaderFrozen = !isHeaderFrozen;
+            updateFreezeButtonState();
+            saveState('freeze', isHeaderFrozen);
+            applyFiltersAndRender();
+        };
+
         // --- EVENT LISTENERS GERAIS ---
         menuButton.addEventListener('click', () => toggleMenu(true));
         closeMenuButton.addEventListener('click', () => toggleMenu(false));
@@ -1233,6 +1261,7 @@
         fileInput.addEventListener('change', handleFileSelect);
         exportXlsxButton.addEventListener('click', showExportOptions);
         adminModeToggle.addEventListener('click', toggleAdminMode);
+        freezeHeaderToggle.addEventListener('click', toggleHeaderFreeze);
         clearCacheButton.addEventListener('click', handleClearCache);
         clearFormattingButton.addEventListener('click', handleClearFormatting);
         
