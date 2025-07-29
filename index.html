@@ -218,6 +218,19 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal de Opções de Exportação -->
+    <div id="export-options-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm">
+            <h3 class="text-lg font-bold text-white mb-4">Opções de Exportação</h3>
+            <p class="text-gray-300 mb-6">Como você gostaria de exportar o arquivo?</p>
+            <div class="flex flex-col gap-4">
+                <button id="export-full" class="w-full px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold">Exportar Completo</button>
+                <button id="export-current-view" class="w-full px-4 py-2 rounded-md bg-teal-600 hover:bg-teal-700 text-white font-semibold">Exportar Visão Atual (Filtros e Colunas)</button>
+                <button id="export-cancel" class="w-full mt-2 px-4 py-2 rounded-md bg-gray-600 hover:bg-gray-500 text-white font-semibold">Cancelar</button>
+            </div>
+        </div>
+    </div>
     
     <!-- Modal de Formatação Condicional -->
     <div id="formatting-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center">
@@ -269,6 +282,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         // --- VARIÁVEIS GLOBAIS ---
         let originalData = [];
+        let filteredData = [];
         let dataMap = new Map();
         let columnOrder = [];
         let columnCheckboxFilters = {};
@@ -306,6 +320,7 @@
         const clearCacheButton = document.getElementById('clear-cache-button');
         const clearFormattingButton = document.getElementById('clear-formatting-button');
         const formattingModal = document.getElementById('formatting-modal');
+        const exportOptionsModal = document.getElementById('export-options-modal');
 
         // --- DADOS INICIAIS (para demonstração) ---
         const initialJsonData = [
@@ -384,17 +399,18 @@
         };
 
         const applyFiltersAndRender = () => {
-            let filteredData = [...originalData];
+            let data = [...originalData];
 
             Object.entries(columnCheckboxFilters).forEach(([header, selectedValues]) => {
                 if (selectedValues && selectedValues.size > 0 && selectedValues.size < new Set(originalData.map(row => (row[header] ?? '').toString())).size) {
-                     filteredData = filteredData.filter(row => {
+                     data = data.filter(row => {
                         const cellValue = (row[header] ?? '').toString();
                         return selectedValues.has(cellValue);
                     });
                 }
             });
             
+            filteredData = data;
             renderTable(filteredData);
         };
         
@@ -938,22 +954,44 @@
             fileInput.value = '';
         };
         
-        const exportToXlsx = () => {
+        const showExportOptions = () => {
+            exportOptionsModal.classList.remove('hidden');
+            exportOptionsModal.classList.add('flex');
+        };
+
+        const hideExportOptions = () => {
+            exportOptionsModal.classList.add('hidden');
+            exportOptionsModal.classList.remove('flex');
+        };
+
+        const exportFullData = () => {
             if (originalData.length === 0) {
                 showNotification('Não há dados para exportar.', 'info');
                 return;
             }
             
-            let filteredData = [...originalData];
-            Object.entries(columnCheckboxFilters).forEach(([header, selectedValues]) => {
-                if (selectedValues && selectedValues.size > 0 && selectedValues.size < new Set(originalData.map(row => (row[header] ?? '').toString())).size) {
-                    filteredData = filteredData.filter(row => {
-                        const cellValue = (row[header] ?? '').toString();
-                        return selectedValues.has(cellValue);
-                    });
-                }
+            const dataToExport = originalData.map((row, index) => {
+                const newRow = { "Nº": index + 1 };
+                const headers = columnOrder.filter(h => h !== '__internal_id');
+                headers.forEach(header => {
+                    newRow[header] = row[header];
+                });
+                return newRow;
             });
 
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados Completos');
+            XLSX.writeFile(workbook, 'dados_completos.xlsx');
+            hideExportOptions();
+        };
+
+        const exportCurrentView = () => {
+            if (filteredData.length === 0) {
+                showNotification('Não há dados na visão atual para exportar.', 'info');
+                return;
+            }
+            
             const dataToExport = filteredData.map((row, index) => {
                 const newRow = { "Nº": index + 1 };
                 const visibleHeaders = columnOrder.filter(h => columnVisibility[h] ?? true);
@@ -965,8 +1003,9 @@
 
             const worksheet = XLSX.utils.json_to_sheet(dataToExport);
             const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
-            XLSX.writeFile(workbook, 'dados_exportados.xlsx');
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Visao Atual');
+            XLSX.writeFile(workbook, 'visao_atual.xlsx');
+            hideExportOptions();
         };
 
         const handleClearCache = () => {
@@ -1192,7 +1231,7 @@
         menuOverlay.addEventListener('click', () => toggleMenu(false));
         loadFileButton.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', handleFileSelect);
-        exportXlsxButton.addEventListener('click', exportToXlsx);
+        exportXlsxButton.addEventListener('click', showExportOptions);
         adminModeToggle.addEventListener('click', toggleAdminMode);
         clearCacheButton.addEventListener('click', handleClearCache);
         clearFormattingButton.addEventListener('click', handleClearFormatting);
@@ -1204,6 +1243,11 @@
             }
             hideConfirmation();
         });
+        
+        // Listeners do Modal de Exportação
+        document.getElementById('export-cancel').addEventListener('click', hideExportOptions);
+        document.getElementById('export-full').addEventListener('click', exportFullData);
+        document.getElementById('export-current-view').addEventListener('click', exportCurrentView);
         
         // Listeners do Modal de Formatação
         document.getElementById('format-close').addEventListener('click', closeFormattingModal);
